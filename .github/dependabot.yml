@@ -42,3 +42,8 @@ updates:
     commit-message:
       prefix: "ci"
       include: "scope"
+    ignore:
+      # v5 removed inputs used by the current workflow. Revisit when the
+      # release-please config is migrated to manifest/config-file mode.
+      - dependency-name: "googleapis/release-please-action"
+        update-types: ["version-update:semver-major"]
