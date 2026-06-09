@@ -217,30 +217,22 @@ async function emitScenario(scenario: Scenario, result: TickResult): Promise<voi
 async function emitFusionIncident(
   cluster: FusionCluster,
   ranked: RankedCluster,
-  enriched: EnrichedIncident | null,
+  enriched: EnrichedIncident,
   result: TickResult,
 ): Promise<void> {
   const cfg = getConfig();
-  // If Claude enriched the cluster, prefer its title/severity/narrative.
-  // Otherwise fall back to the deterministic rules from fusion.ts.
-  const severity = enriched?.severity ?? severityFor(cluster);
-  const sourceTypeList = Object.entries(cluster.sourceTypeCounts)
-    .map(([k, v]) => `${v}×${k}`)
-    .join(", ");
+  // Claude enrichment is required before an incident is emitted.
+  const severity = enriched.severity ?? severityFor(cluster);
+  const title = enriched.title;
 
-  const baseTitle = `Fused incident — ${cluster.members.length} signals (${sourceTypeList})`;
-  const title = enriched?.title ?? baseTitle;
-
-  const llmBlock = enriched
-    ? [
-        `**${enriched.title}**`,
-        "",
-        enriched.narrative,
-        "",
-        `_decision hint:_ **${enriched.decision_hint}**  ·  _enriched by claude (${cfg.LLM_MODEL})_`,
-        "",
-      ]
-    : [];
+  const llmBlock = [
+    `**${enriched.title}**`,
+    "",
+    enriched.narrative,
+    "",
+    `_decision hint:_ **${enriched.decision_hint}**  ·  _enriched by claude (${cfg.LLM_MODEL})_`,
+    "",
+  ];
 
   const notes = [
     ...llmBlock,
@@ -339,8 +331,9 @@ async function emitFusionIncident(
     tags: [
       "fusion:auto",
       `severity:${severity}`,
-      ...(enriched ? ["enriched:claude", `decision:${enriched.decision_hint}`] : []),
-      ...(enriched?.tags ?? []),
+      "enriched:claude",
+      `decision:${enriched.decision_hint}`,
+      ...(enriched.tags ?? []),
       `region:${regionHint(cluster.centroidLat, cluster.centroidLng).replace(/\s+/g, "-")}`,
       ...Object.keys(cluster.sourceTypeCounts).map(
         (k) => `signal:${k.replace("_", "-")}`,

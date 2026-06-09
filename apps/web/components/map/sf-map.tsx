@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import maplibregl, { type Map as MlMap, type GeoJSONSource } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { CameraTileData } from "@/components/cameras/camera-tile";
@@ -9,8 +9,6 @@ import { IncidentPanel } from "./incident-panel";
 import { DispatchPanel } from "./dispatch-panel";
 import { NewsPanel, type NewsIncidentRow } from "./news-panel";
 import type { EnvSignalRow } from "@/lib/cockpit/environmental";
-import { TopPriorityPanel } from "./top-priority-panel";
-import { useEventStream } from "@/hooks/use-event-stream";
 import { wdIncidents, type WdIncident, type WdSignal } from "@/lib/watchdog-fixtures";
 import { isHighPriority, type DispatchCall } from "@/lib/dispatch";
 import { useDispatchFeed } from "@/hooks/use-dispatch-feed";
@@ -136,11 +134,6 @@ export function SFMap({
 
   const dispatch = useDispatchFeed();
 
-  const locateOnMap = useCallback((lat: number, lng: number) => {
-    const map = mapRef.current;
-    if (!map) return;
-    map.easeTo({ center: [lng, lat], zoom: 14.5 });
-  }, []);
   const filteredDispatch = useMemo(
     () => dispatch.calls.filter((c) => callMatchesPriority(c, dispatchPriority)),
     [dispatch.calls, dispatchPriority],

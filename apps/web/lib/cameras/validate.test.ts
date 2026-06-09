@@ -143,7 +143,7 @@ describe("validateStream", () => {
       )
       .mockResolvedValueOnce(mockResponse({ status: 502 }));
     const r = await validateStream(
-      "https://wzmedia.example/cam.m3u8",
+      "https://wzmedia.dot.ca.gov/cam.m3u8",
       "hls",
       "caltrans",
       fetchSpy as unknown as typeof fetch,
@@ -164,13 +164,13 @@ describe("validateStream", () => {
       .mockResolvedValueOnce(mockResponse({ status: 206 }))
       .mockResolvedValueOnce(mockResponse({ status: 502 }));
     const r = await validateStream(
-      "https://wzmedia.example/cam.m3u8",
+      "https://wzmedia.dot.ca.gov/cam.m3u8",
       "hls",
       "caltrans",
       fetchSpy as unknown as typeof fetch,
     );
     expect(r).toEqual({ status: "failed", error: "seg_http_502" });
-    expect(fetchSpy.mock.calls[2]![0]).toBe("https://wzmedia.example/seg-2.ts");
+    expect(fetchSpy.mock.calls[2]![0]).toBe("https://wzmedia.dot.ca.gov/seg-2.ts");
   });
 
   it("returns degraded when Caltrans HLS fails but the still image works", async () => {

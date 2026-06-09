@@ -1,109 +1,116 @@
-# CalTrans CCTV Dashboard
+# WatchDog
 
-Bay Area (CalTrans District 4) CCTV monitoring + incident clipping dashboard.
+WatchDog is an open-source situational-awareness dashboard for Bay Area public
+safety and mobility signals. It combines Caltrans camera surfaces, live incident
+feeds, environmental signals, public transit alerts, and enrichment workers into
+a Next.js operator console.
 
-- **Repo:** https://github.com/NewCoder3294/watchdog
-- **Vercel:** https://vercel.com/worklessteam-9027s-projects/caltrans-cctv
-- **Supabase:** https://supabase.com/dashboard/project/stfxqaocnyhkumapmbjw
+The project is in active development. Contributions are welcome, especially on
+well-scoped bugs, tests, data-source reliability, and documentation.
 
-## Docs
+## What Is In This Repo
 
-Start here in this order — each builds on the previous:
+```text
+apps/web                  Next.js 15 app for public and operator surfaces
+packages/db               Drizzle schema, migrations, and typed database client
+packages/sync             Caltrans and public-source sync/parsing jobs
+packages/ingestion        Signal ingestion, correlation, and camera helpers
+packages/openclaw-worker  OpenClaw fusion and enrichment worker
+docs/                     Product, technical, status, and design documents
+```
 
-1. **[`docs/PRD.md`](docs/PRD.md)** — WatchDog product requirements. What we're
-   building and why. Read first.
-2. **[`docs/TRD.md`](docs/TRD.md)** — technical requirements. Architecture,
-   data model, component ownership across the 5-person team.
-3. **[`docs/STATUS.md`](docs/STATUS.md)** — what's in this repo vs. what lives
-   elsewhere in the wider WatchDog system. Read before assuming a component
-   is here.
-4. **[`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md)** — the 3-minute demo
-   walkthrough and Q&A prep. The whole team should be able to deliver this.
-5. **[`docs/superpowers/specs/2026-05-16-caltrans-cctv-dashboard-design.md`](docs/superpowers/specs/2026-05-16-caltrans-cctv-dashboard-design.md)** —
-   design spec for the dispatcher dashboard.
-6. **[`docs/superpowers/plans/`](docs/superpowers/plans/)** — phase plans
-   (P1 done, P2–P6 to be written as phases are claimed).
-7. **[`docs/brainstorm.md`](docs/brainstorm.md)** — origin notes, kept for
-   context.
+Start with these docs:
+
+1. [`docs/STATUS.md`](docs/STATUS.md) - what is implemented here today.
+2. [`docs/TRD.md`](docs/TRD.md) - architecture and technical requirements.
+3. [`docs/PRD.md`](docs/PRD.md) - product goals and user workflows.
+4. [`CONTRIBUTING.md`](CONTRIBUTING.md) - local setup and PR expectations.
+5. [`SECURITY.md`](SECURITY.md) - private vulnerability reporting.
+6. [`docs/MAINTAINING.md`](docs/MAINTAINING.md) - repo stewardship runbook.
 
 ## Stack
 
-- Next.js 15 (App Router) + React 19, TypeScript strict
-- Tailwind v4 (monochrome tokens), shadcn/ui
-- Supabase (Postgres + Storage + Auth)
+- Next.js 15, React 19, TypeScript strict
+- Tailwind CSS 4 and shadcn-style UI primitives
+- Supabase Postgres, Storage, Auth, and RLS
 - Drizzle ORM
-- pnpm workspaces + Turborepo
-- Vercel deploy + Vercel Cron
+- pnpm workspaces and Turborepo
+- Vitest for unit tests
+- GitHub Actions for CI, dependency review, and CodeQL
 
-## Workspace layout
+## Local Setup
 
-```
-apps/web         Next.js app
-packages/db      Drizzle schema + typed client
-packages/sync    CalTrans catalog parser + upsert
-```
+Prerequisites:
 
-## Teammate onboarding (5 minutes)
-
-1. **Get added to the Supabase project, GitHub repo, and Vercel project.** Ask Nicolas.
-2. **Clone + install:**
-   ```bash
-   git clone https://github.com/NewCoder3294/watchdog.git caltrans-cctv
-   cd caltrans-cctv
-   pnpm install
-   ```
-3. **Pull env vars from Vercel** (one command — no manual copying):
-   ```bash
-   npx vercel link --yes --project caltrans-cctv
-   npx vercel env pull apps/web/.env.local
-   ```
-   That populates `apps/web/.env.local` with everything: Supabase URL, anon key, service role, `DATABASE_URL`, and `CRON_SECRET`. No need to hunt through dashboards.
-4. **Run dev:**
-   ```bash
-   pnpm dev
-   ```
-   Open http://localhost:3000 — you'll be redirected to `/login`. Sign in with a Supabase Auth user (create one in the Supabase dashboard → Authentication → Users).
-5. **Seed cameras** (one-time, only if the `cameras` table is empty):
-   ```bash
-   curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/sync-cameras
-   ```
-
-## Dev commands
+- Node 20 or newer
+- pnpm 9 or newer
+- A Supabase project you control
 
 ```bash
-pnpm dev          # all packages
-pnpm test         # vitest
-pnpm typecheck    # tsc --noEmit across workspace
+git clone https://github.com/NewCoder3294/watchdog.git
+cd watchdog
+pnpm install
+cp apps/web/.env.example apps/web/.env.local
+pnpm dev
+```
+
+Fill in the required Supabase values in `apps/web/.env.local`:
+
+```text
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+DATABASE_URL=
+CRON_SECRET=
+```
+
+Most third-party API keys in `.env.example` are optional. When optional keys are
+missing, the relevant source usually disables itself or falls back to local
+logging/in-memory behavior.
+
+Apply database migrations with:
+
+```bash
+pnpm db:migrate
+```
+
+Then run the app at http://localhost:3000.
+
+## Development Commands
+
+```bash
+pnpm dev          # run workspace dev tasks
+pnpm lint         # lint workspace packages
+pnpm typecheck    # TypeScript checks
+pnpm test         # Vitest suites
 pnpm build        # production build
 ```
 
-## Deploys
+## Contribution Flow
 
-- **Production:** every push to `main` auto-deploys to https://caltrans-cctv.vercel.app
-- **Preview:** every PR gets its own preview URL with the same env vars
-- **Cron:** `/api/cron/sync-cameras` runs daily at 09:00 UTC, gated by `CRON_SECRET`
+- Pick an open issue or open a proposal before starting a large change.
+- Branch from `main` using `feat/<topic>`, `fix/<topic>`, `docs/<topic>`,
+  `test/<topic>`, or `chore/<topic>`.
+- Keep PRs focused on one logical change.
+- Use Conventional Commit-style PR titles, for example
+  `fix(web): block invalid camera-frame hosts`.
+- Run `pnpm typecheck`, `pnpm lint`, and `pnpm test` before opening or updating
+  a PR.
 
-Don't merge anything to `main` without Nicolas's approval.
+Good first contribution areas:
 
-## Parallel phases (claim one)
+- Add focused tests for cron routes under `apps/web/app/api/cron`.
+- Improve parser coverage in `packages/sync`.
+- Tighten docs for local Supabase setup.
+- Fix small CodeQL, lint, or typecheck findings.
 
-After P1 (foundation, done), these can each be worked in parallel — pick one and open a branch:
+## Security
 
-- **P2 — Live Wall** — `apps/web/app/(app)/page.tsx`, grid view + HLS/MJPEG players
-- **P3 — Buffer + Clipping** — `apps/web/lib/buffer/*`, MediaRecorder + IndexedDB rolling buffer
-- **P4 — Map** — `apps/web/app/(app)/map/page.tsx`, MapLibre + desaturated tiles
-- **P5 — Incidents** — `apps/web/app/(app)/incidents/*`, data table + detail page
-- **P6 — Polish** — keyboard shortcuts, perf, empty/error states
+Do not open public issues for vulnerabilities. Use the private process in
+[`SECURITY.md`](SECURITY.md). The repository runs CodeQL, dependency review, and
+Dependabot to keep contributor-facing security feedback visible in pull
+requests.
 
-Each phase has (or will have) its own plan file in `docs/superpowers/plans/`. Ask Nicolas before starting work on a phase that doesn't yet have a plan.
+## License
 
-## Aesthetic — non-negotiable
-
-Pure black and white. No color. Status uses iconography, weight, and motion — never hue. See the design spec § "Aesthetic Spec" for the full token set.
-
-## Branch + commit conventions
-
-- Branch names: `feat/p<N>-<short-name>` (e.g. `feat/p2-live-wall`)
-- Commits: conventional commits — `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`, `perf:`
-- Commit subject ≤72 chars, imperative mood, no period
-- Tests required for parser/data-layer code; UI changes can ship without (we'll add Playwright in P6)
+MIT. See [`LICENSE`](LICENSE).

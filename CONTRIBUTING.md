@@ -25,7 +25,7 @@ Socrata) are optional — code falls back to console logs / in-memory caches
 when unset.
 
 Database migrations live in `packages/db/migrations`. Apply them to your
-Supabase project with `pnpm db:push` (Drizzle).
+Supabase project with `pnpm db:migrate` (Drizzle).
 
 ## Repo layout
 
@@ -77,7 +77,7 @@ sense.
 - **Tailwind v4** monochrome tokens. No ad-hoc hex colors in components;
   use existing tokens.
 - **Components** named in `PascalCase`, files in `kebab-case`.
-- Run `pnpm typecheck` and `pnpm lint` before pushing.
+- Run `pnpm typecheck`, `pnpm lint`, and `pnpm test` before pushing.
 
 ## Testing
 

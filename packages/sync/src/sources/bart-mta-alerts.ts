@@ -91,7 +91,7 @@ export interface BartMtaResult {
 function cdata(value: unknown): string {
   if (value == null) return "";
   if (typeof value === "string") return value.trim();
-  if (typeof value === "object" && value !== null) {
+  if (typeof value === "object") {
     const c = (value as { "#cdata-section"?: string })["#cdata-section"];
     if (typeof c === "string") return c.trim();
   }
