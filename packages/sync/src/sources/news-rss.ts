@@ -108,29 +108,68 @@ function stripCdata(s: string): string {
 function stripHtml(s: string): string {
   return s
     .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
+    .replace(/&(nbsp|amp|lt|gt|quot|#39);/g, (_match, entity: string) => {
+      switch (entity) {
+        case "nbsp":
+          return " ";
+        case "amp":
+          return "&";
+        case "lt":
+          return "<";
+        case "gt":
+          return ">";
+        case "quot":
+          return '"';
+        case "#39":
+          return "'";
+        default:
+          return _match;
+      }
+    })
     .replace(/\s+/g, " ")
     .trim();
 }
 
 function pickTag(xml: string, tag: string): string | null {
-  const re = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`, "i");
-  const m = xml.match(re);
-  if (!m) return null;
-  return stripCdata(m[1]!).trim();
+  const body = pickTagBody(xml, tag);
+  if (body === null) return null;
+  return stripCdata(body).trim();
+}
+
+function pickTagBody(xml: string, tag: string): string | null {
+  const lowerXml = xml.toLowerCase();
+  const lowerTag = tag.toLowerCase();
+  const openStart = lowerXml.indexOf(`<${lowerTag}`);
+  if (openStart < 0) return null;
+  const openEnd = lowerXml.indexOf(">", openStart);
+  if (openEnd < 0) return null;
+  const closeStart = lowerXml.indexOf(`</${lowerTag}>`, openEnd + 1);
+  if (closeStart < 0) return null;
+  return xml.slice(openEnd + 1, closeStart);
+}
+
+function pickItemBodies(xml: string): string[] {
+  const lowerXml = xml.toLowerCase();
+  const bodies: string[] = [];
+  let cursor = 0;
+
+  while (cursor < xml.length) {
+    const openStart = lowerXml.indexOf("<item", cursor);
+    if (openStart < 0) break;
+    const openEnd = lowerXml.indexOf(">", openStart);
+    if (openEnd < 0) break;
+    const closeStart = lowerXml.indexOf("</item>", openEnd + 1);
+    if (closeStart < 0) break;
+    bodies.push(xml.slice(openEnd + 1, closeStart));
+    cursor = closeStart + "</item>".length;
+  }
+
+  return bodies;
 }
 
 export function parseRss(xml: string): ParsedRssItem[] {
   const items: ParsedRssItem[] = [];
-  const itemRe = /<item[^>]*>([\s\S]*?)<\/item>/gi;
-  let match: RegExpExecArray | null;
-  while ((match = itemRe.exec(xml)) !== null) {
-    const body = match[1] ?? "";
+  for (const body of pickItemBodies(xml)) {
     const title = pickTag(body, "title") ?? "";
     const link = pickTag(body, "link") ?? "";
     const description =

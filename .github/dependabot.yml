@@ -13,8 +13,8 @@ updates:
     labels:
       - "dependencies"
     commit-message:
-      prefix: "chore(deps)"
-      prefix-development: "chore(deps-dev)"
+      prefix: "chore"
+      prefix-development: "chore"
       include: "scope"
     groups:
       production-minor-and-patch:

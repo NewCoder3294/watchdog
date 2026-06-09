@@ -16,10 +16,7 @@ describe("sendSms", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const result = await sendSms({ to: "+14155551212", body: "hi" });
     expect(result).toEqual({ channel: "log", status: "sent" });
-    expect(logSpy).toHaveBeenCalledWith(
-      expect.stringContaining("[SMS-LOG] +14155551212"),
-      expect.stringContaining("hi"),
-    );
+    expect(logSpy).toHaveBeenCalledWith("[SMS-LOG] Twilio env missing; SMS not sent");
   });
 
   it("calls Twilio when env present", async () => {

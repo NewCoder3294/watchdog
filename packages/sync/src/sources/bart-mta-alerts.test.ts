@@ -12,7 +12,7 @@ function jsonOk(body: unknown) {
 describe("fetchBartMtaAlerts", () => {
   it("maps a BART major delay to a high-severity transit signal", async () => {
     const fetchImpl = vi.fn().mockImplementation((url: string) => {
-      if (url.includes("bart.gov")) {
+      if (new URL(url).hostname === "api.bart.gov") {
         return Promise.resolve(
           jsonOk({
             root: {
@@ -68,7 +68,7 @@ describe("fetchBartMtaAlerts", () => {
 
   it("ingests SFMTA Muni alerts from the 511 service-alerts feed", async () => {
     const fetchImpl = vi.fn().mockImplementation((url: string) => {
-      if (url.includes("bart.gov")) {
+      if (new URL(url).hostname === "api.bart.gov") {
         return Promise.resolve(jsonOk({ root: { bsa: [] } }));
       }
       // 511 SFMTA response
@@ -118,7 +118,7 @@ describe("fetchBartMtaAlerts", () => {
 
   it("isolates failure: BART error + SFMTA ok still returns SFMTA rows", async () => {
     const fetchImpl = vi.fn().mockImplementation((url: string) => {
-      if (url.includes("bart.gov")) {
+      if (new URL(url).hostname === "api.bart.gov") {
         return Promise.resolve({
           ok: false,
           status: 500,

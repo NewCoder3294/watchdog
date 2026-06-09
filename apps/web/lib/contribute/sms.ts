@@ -15,7 +15,7 @@ export async function sendSms({ to, body }: SendArgs): Promise<SendResult> {
   const from = process.env.TWILIO_FROM_NUMBER;
 
   if (!sid || !token || !from) {
-    console.log(`[SMS-LOG] ${to}`, body);
+    console.log("[SMS-LOG] Twilio env missing; SMS not sent");
     return { channel: "log", status: "sent" };
   }
 

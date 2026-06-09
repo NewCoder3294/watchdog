@@ -56,5 +56,6 @@ Out of scope:
 ## Credit
 
 We're happy to credit researchers in release notes and the
-`SECURITY-ACKNOWLEDGEMENTS` file once a fix ships. Let us know in your
+[`SECURITY-ACKNOWLEDGEMENTS.md`](SECURITY-ACKNOWLEDGEMENTS.md) file once a fix
+ships. Let us know in your
 report if you'd like to be credited and how.

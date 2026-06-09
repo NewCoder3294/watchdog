@@ -31,15 +31,90 @@ const CALTRANS_UNAVAILABLE_HEIGHT = 240;
 const CALTRANS_ALT_UNAVAILABLE_HEIGHT = 260;
 const HLS_PLAYLIST_DEPTH_LIMIT = 3;
 const HLS_SEGMENTS_TO_PROBE = 3;
+const CALTRANS_FETCH_ORIGINS = {
+  "wzmedia.dot.ca.gov": "https://wzmedia.dot.ca.gov",
+  "cwwp2.dot.ca.gov": "https://cwwp2.dot.ca.gov",
+} as const;
+
+type CaltransFetchHost = keyof typeof CALTRANS_FETCH_ORIGINS;
 
 interface HttpResourceOptions {
   inspectImage?: boolean;
   rejectCaltransUnavailable?: boolean;
+  source?: string;
 }
 
 interface HlsEntry {
   url: string;
   kind: "playlist" | "segment";
+}
+
+function normalizeFetchableHttpUrl(rawUrl: string, source: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+
+  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+
+  if (source === "caltrans") {
+    return normalizeCaltransFetchUrl(rawUrl);
+  }
+
+  if (isPrivateOrLocalHostname(url.hostname)) return null;
+  url.username = "";
+  url.password = "";
+  url.hash = "";
+  return url.toString();
+}
+
+function normalizeCaltransFetchUrl(rawUrl: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+
+  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+
+  const origin = CALTRANS_FETCH_ORIGINS[url.hostname as CaltransFetchHost];
+  if (!origin) return null;
+
+  const normalized = new URL(origin);
+  normalized.pathname = url.pathname;
+  normalized.search = url.search;
+  return normalized.toString();
+}
+
+function isPrivateOrLocalHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (
+    host === "localhost" ||
+    host === "0.0.0.0" ||
+    host === "::1" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".local")
+  ) {
+    return true;
+  }
+
+  const octets = host.split(".").map((part) => Number(part));
+  if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part))) {
+    return false;
+  }
+
+  const a = octets[0] ?? 0;
+  const b = octets[1] ?? 0;
+  return (
+    a === 10 ||
+    a === 127 ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168)
+  );
 }
 
 /**
@@ -108,14 +183,17 @@ export async function validateStream(
     return { status: "ok", error: null };
   }
 
+  const fetchUrl = normalizeFetchableHttpUrl(streamUrl, source);
+  if (!fetchUrl) return { status: "failed", error: "blocked_host" };
+
   // The DB stores stream_type='hls' even for sources whose stream_url is
   // actually an iframe embed (e.g. Windy webcams). Treat URLs that don't
   // look like HLS playlists as iframes regardless of the DB stream_type.
   const looksLikeIframe =
-    /^https?:\/\/(?:webcams\.windy\.com|player\.day|www\.youtube\.com\/embed\/)/i.test(streamUrl) ||
+    /^https?:\/\/(?:webcams\.windy\.com|player\.day|www\.youtube\.com\/embed\/)/i.test(fetchUrl) ||
     streamType === "iframe";
   const looksLikeHls =
-    !looksLikeIframe && (streamType === "hls" || streamUrl.includes(".m3u8"));
+    !looksLikeIframe && (streamType === "hls" || fetchUrl.includes(".m3u8"));
 
   async function failOrStill(error: string): Promise<ValidationResult> {
     if (
@@ -128,6 +206,7 @@ export async function validateStream(
         still = await validateHttpResource(fallbackStillImageUrl, fetchImpl, {
           inspectImage: true,
           rejectCaltransUnavailable: source === "caltrans",
+          source,
         });
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -146,7 +225,7 @@ export async function validateStream(
 
   try {
     if (looksLikeHls) {
-      const res = await fetchImpl(streamUrl, {
+      const res = await fetchImpl(fetchUrl, {
         method: "GET",
         signal: AbortSignal.timeout(TIMEOUT_MS),
         redirect: "follow",
@@ -163,8 +242,9 @@ export async function validateStream(
       // intermediate playlist.
       const segment = await validateHlsSegment(
         text,
-        streamUrl,
+        fetchUrl,
         fetchImpl,
+        source,
         0,
       );
       if (segment.status !== "ok") {
@@ -172,9 +252,10 @@ export async function validateStream(
       }
       return { status: "ok", error: null };
     }
-    return await validateHttpResource(streamUrl, fetchImpl, {
-      inspectImage: shouldInspectStillFrame(streamUrl, streamType, source),
+    return await validateHttpResource(fetchUrl, fetchImpl, {
+      inspectImage: shouldInspectStillFrame(fetchUrl, streamType, source),
       rejectCaltransUnavailable: source === "caltrans",
+      source,
     });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -187,6 +268,7 @@ async function validateHlsSegment(
   playlistText: string,
   playlistUrl: string,
   fetchImpl: typeof fetch,
+  source: string,
   depth: number,
 ): Promise<ValidationResult> {
   const entries = pickHlsEntries(playlistText, playlistUrl);
@@ -197,7 +279,9 @@ async function validateHlsSegment(
     if (depth >= HLS_PLAYLIST_DEPTH_LIMIT) {
       return { status: "failed", error: "playlist_depth" };
     }
-    const res = await fetchImpl(entry.url, {
+    const playlistFetchUrl = normalizeFetchableHttpUrl(entry.url, source);
+    if (!playlistFetchUrl) return { status: "failed", error: "blocked_host" };
+    const res = await fetchImpl(playlistFetchUrl, {
       method: "GET",
       signal: AbortSignal.timeout(TIMEOUT_MS),
       redirect: "follow",
@@ -207,13 +291,21 @@ async function validateHlsSegment(
     if (!text.slice(0, 256).includes("#EXTM3U")) {
       return { status: "failed", error: "playlist_not_m3u8" };
     }
-    return await validateHlsSegment(text, entry.url, fetchImpl, depth + 1);
+    return await validateHlsSegment(
+      text,
+      playlistFetchUrl,
+      fetchImpl,
+      source,
+      depth + 1,
+    );
   }
 
   for (const segment of entries
     .filter((e) => e.kind === "segment")
     .slice(0, HLS_SEGMENTS_TO_PROBE)) {
-    const segRes = await fetchImpl(segment.url, {
+    const segmentFetchUrl = normalizeFetchableHttpUrl(segment.url, source);
+    if (!segmentFetchUrl) return { status: "failed", error: "blocked_host" };
+    const segRes = await fetchImpl(segmentFetchUrl, {
       method: "GET",
       headers: { range: "bytes=0-1023" },
       signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -256,31 +348,27 @@ function pickHlsEntries(
   return entries;
 }
 
-function pickFirstHlsEntry(
-  playlistText: string,
-  playlistUrl: string,
-): HlsEntry | null {
-  return pickHlsEntries(playlistText, playlistUrl)[0] ?? null;
-}
-
 async function validateHttpResource(
   url: string,
   fetchImpl: typeof fetch,
   options: HttpResourceOptions = {},
 ): Promise<ValidationResult> {
+  const fetchUrl = normalizeFetchableHttpUrl(url, options.source ?? "external");
+  if (!fetchUrl) return { status: "failed", error: "blocked_host" };
+
   // iframe / mjpeg / unknown — try HEAD first (cheap), fall back to a
   // Range-GET when the origin rejects HEAD (Windy embeds return 405/403
   // for HEAD but serve GET fine).
-  const head = await fetchImpl(url, {
+  const head = await fetchImpl(fetchUrl, {
     method: "HEAD",
     signal: AbortSignal.timeout(TIMEOUT_MS),
     redirect: "follow",
   });
   if (head.status === 405 || head.status === 403 || head.status === 501) {
     if (options.inspectImage) {
-      return await validateImageFrame(url, fetchImpl, options);
+      return await validateImageFrame(fetchUrl, fetchImpl, options);
     }
-    const res = await fetchImpl(url, {
+    const res = await fetchImpl(fetchUrl, {
       method: "GET",
       headers: { range: "bytes=0-511" },
       signal: AbortSignal.timeout(TIMEOUT_MS),
@@ -291,7 +379,7 @@ async function validateHttpResource(
   }
   if (!head.ok) return { status: "failed", error: `http_${head.status}` };
   if (options.inspectImage) {
-    return await validateImageFrame(url, fetchImpl, options);
+    return await validateImageFrame(fetchUrl, fetchImpl, options);
   }
   return { status: "ok", error: null };
 }
@@ -301,7 +389,12 @@ async function validateImageFrame(
   fetchImpl: typeof fetch,
   options: HttpResourceOptions,
 ): Promise<ValidationResult> {
-  const frame = await fetchValidatedImageFrame(url, "caltrans", fetchImpl, options);
+  const frame = await fetchValidatedImageFrame(
+    url,
+    options.source ?? "external",
+    fetchImpl,
+    options,
+  );
   return { status: frame.status, error: frame.error };
 }
 
@@ -311,7 +404,12 @@ export async function fetchValidatedImageFrame(
   fetchImpl: typeof fetch = fetch,
   options: HttpResourceOptions = {},
 ): Promise<ValidatedImageFrame> {
-  const res = await fetchImpl(url, {
+  if (source !== "caltrans") return { status: "failed", error: "blocked_host" };
+
+  const fetchUrl = normalizeCaltransFetchUrl(url);
+  if (!fetchUrl) return { status: "failed", error: "blocked_host" };
+
+  const res = await fetchImpl(fetchUrl, {
     method: "GET",
     headers: {
       accept: "image/*,*/*;q=0.8",
@@ -441,7 +539,6 @@ function shouldInspectStillFrame(
   source: string,
 ): boolean {
   if (source === "caltrans") return true;
-  if (streamType === "mjpeg") return /\.(?:jpe?g|png|webp)(?:[?#].*)?$/i.test(url);
   return false;
 }
 

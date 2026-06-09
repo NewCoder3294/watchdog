@@ -776,7 +776,6 @@ function HowStep({
 
 const DIAGRAM_STROKE = "#000";
 const DIAGRAM_MUTED = "#9ca3af";
-const DIAGRAM_ACCENT = "#000";
 const PX_MONO = "ui-monospace, 'SF Mono', monospace";
 
 function ArrowDef({ id, color = DIAGRAM_STROKE }: { id: string; color?: string }) {

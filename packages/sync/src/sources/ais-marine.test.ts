@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { fetchAis } from "./ais-marine";
 
 // Minimal fake WebSocket that lets the caller drive open/message/close.

@@ -61,13 +61,34 @@ function parseBridgeStreamUrl(
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ALLOWED_HOSTS = new Set([
-  "wzmedia.dot.ca.gov",
-  "cwwp2.dot.ca.gov",
-]);
+const ALLOWED_UPSTREAM_ORIGINS = {
+  "wzmedia.dot.ca.gov": "https://wzmedia.dot.ca.gov",
+  "cwwp2.dot.ca.gov": "https://cwwp2.dot.ca.gov",
+} as const;
 
-function isAllowed(target: URL): boolean {
-  return ALLOWED_HOSTS.has(target.hostname);
+type AllowedUpstreamHost = keyof typeof ALLOWED_UPSTREAM_ORIGINS;
+
+function allowedUpstreamUrl(target: URL): URL | null {
+  if (target.protocol !== "https:" && target.protocol !== "http:") return null;
+
+  const origin = ALLOWED_UPSTREAM_ORIGINS[target.hostname as AllowedUpstreamHost];
+  if (!origin) return null;
+
+  const upstream = new URL(origin);
+  upstream.pathname = target.pathname;
+  upstream.search = target.search;
+  return upstream;
+}
+
+async function fetchAllowedUpstream(
+  target: URL,
+  init: RequestInit,
+): Promise<Response> {
+  const upstreamUrl = allowedUpstreamUrl(target);
+  if (!upstreamUrl) {
+    throw new Error("host not allowed");
+  }
+  return await fetch(upstreamUrl.toString(), init);
 }
 
 function proxyUrl(target: URL, origin: string): string {
@@ -84,8 +105,9 @@ function rewriteManifest(body: string, target: URL, origin: string): string {
         return line.replace(/URI="([^"]+)"/g, (_m, uri) => {
           try {
             const abs = new URL(uri, target);
-            if (!isAllowed(abs)) return `URI="${uri}"`;
-            return `URI="${proxyUrl(abs, origin)}"`;
+            const upstream = allowedUpstreamUrl(abs);
+            if (!upstream) return `URI="${uri}"`;
+            return `URI="${proxyUrl(upstream, origin)}"`;
           } catch {
             return `URI="${uri}"`;
           }
@@ -93,8 +115,9 @@ function rewriteManifest(body: string, target: URL, origin: string): string {
       }
       try {
         const abs = new URL(trimmed, target);
-        if (!isAllowed(abs)) return line;
-        return proxyUrl(abs, origin);
+        const upstream = allowedUpstreamUrl(abs);
+        if (!upstream) return line;
+        return proxyUrl(upstream, origin);
       } catch {
         return line;
       }
@@ -154,7 +177,7 @@ async function fetchManifest(target: URL): Promise<string> {
       }
     }
 
-    const upstream = await fetch(key, {
+    const upstream = await fetchAllowedUpstream(target, {
       headers: { accept: "*/*", "user-agent": "caltrans-cctv-proxy" },
       cache: "no-store",
     });
@@ -208,7 +231,7 @@ async function fetchSegment(
       }
     }
 
-    const upstream = await fetch(key, {
+    const upstream = await fetchAllowedUpstream(target, {
       headers: { accept: "*/*", "user-agent": "caltrans-cctv-proxy" },
       cache: "no-store",
     });
@@ -311,13 +334,14 @@ export async function GET(request: NextRequest) {
     return withRateLimitHeaders(await dispatchBridge(url), rate);
   }
 
-  if (!isAllowed(target)) {
+  const upstreamTarget = allowedUpstreamUrl(target);
+  if (!upstreamTarget) {
     return NextResponse.json({ error: "host not allowed" }, { status: 403 });
   }
 
   const isManifest =
-    target.pathname.endsWith(".m3u8") ||
-    target.pathname.endsWith(".M3U8");
+    upstreamTarget.pathname.endsWith(".m3u8") ||
+    upstreamTarget.pathname.endsWith(".M3U8");
 
   const origin = `${request.nextUrl.protocol}//${request.nextUrl.host}`;
   const headers = new Headers();
@@ -326,12 +350,12 @@ export async function GET(request: NextRequest) {
   if (isManifest) {
     let body: string;
     try {
-      body = await fetchManifest(target);
+      body = await fetchManifest(upstreamTarget);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "upstream error";
       return NextResponse.json({ error: msg }, { status: 502 });
     }
-    const rewritten = rewriteManifest(body, target, origin);
+    const rewritten = rewriteManifest(body, upstreamTarget, origin);
     headers.set("content-type", "application/vnd.apple.mpegurl");
     headers.set("cache-control", "no-store");
     return withRateLimitHeaders(
@@ -340,12 +364,12 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const isSegment = /\.(ts|m4s|mp4|aac|key)$/i.test(target.pathname);
+  const isSegment = /\.(ts|m4s|mp4|aac|key)$/i.test(upstreamTarget.pathname);
 
   if (isSegment) {
     let seg: { bytes: Buffer; contentType: string };
     try {
-      seg = await fetchSegment(target);
+      seg = await fetchSegment(upstreamTarget);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "upstream error";
       return NextResponse.json({ error: msg }, { status: 502 });
@@ -369,7 +393,7 @@ export async function GET(request: NextRequest) {
   }
 
   // Anything else (rare) — pass through without caching.
-  const upstream = await fetch(target.toString(), {
+  const upstream = await fetchAllowedUpstream(upstreamTarget, {
     headers: { accept: "*/*", "user-agent": "caltrans-cctv-proxy" },
     cache: "no-store",
   });
