@@ -21,7 +21,7 @@
     "db:stats": "tsx src/check-signals.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.102.0",
+    "@anthropic-ai/sdk": "^0.115.0",
     "@caltrans/db": "workspace:*",
     "@huggingface/transformers": "^3.0.0",
     "dotenv": "^16.4.5",
